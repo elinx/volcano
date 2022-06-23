@@ -51,6 +51,8 @@ import (
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
 	volumescheduling "k8s.io/kubernetes/pkg/scheduler/framework/plugins/volumebinding"
 
+	karmadaclientset "github.com/karmada-io/karmada/pkg/generated/clientset/versioned"
+	karmadaInformerfactory "github.com/karmada-io/karmada/pkg/generated/informers/externalversions"
 	batch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 	"volcano.sh/apis/pkg/apis/scheduling"
 	schedulingscheme "volcano.sh/apis/pkg/apis/scheduling/scheme"
@@ -386,6 +388,10 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 	if err != nil {
 		panic(fmt.Sprintf("failed init eventClient, with err: %v", err))
 	}
+	karmadaClient, err := karmadaclientset.NewForConfig(config)
+	if err != nil {
+		panic(fmt.Sprintf("failed init karmadaClient, with err: %v", err))
+	}
 
 	// create default queue
 	reclaimable := true
@@ -512,6 +518,8 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 	sc.csiDriverInformer = informerFactory.Storage().V1().CSIDrivers()
 	sc.csiStorageCapacityInformer = informerFactory.Storage().V1beta1().CSIStorageCapacities()
 
+	kinformerFactory := karmadaInformerfactory.NewSharedInformerFactory(karmadaClient, 0)
+	addClusterEventHandlers(sc, kinformerFactory)
 	var capacityCheck *volumescheduling.CapacityCheck
 	if options.ServerOpts.EnableCSIStorage {
 		capacityCheck = &volumescheduling.CapacityCheck{
@@ -615,6 +623,85 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 		DeleteFunc: sc.DeleteNumaInfoV1alpha1,
 	})
 	return sc
+}
+
+func addClusterEventHandlers(sc *SchedulerCache, informerFactory karmadaInformerfactory.SharedInformerFactory) {
+	bindingInformer := informerFactory.Work().V1alpha2().ResourceBindings().Informer()
+	bindingInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+		FilterFunc: sc.resourceBindingEventFilter,
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    sc.onResourceBindingAdd,
+			UpdateFunc: sc.onResourceBindingUpdate,
+		},
+	})
+
+	policyInformer := informerFactory.Policy().V1alpha1().PropagationPolicies().Informer()
+	policyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: sc.onPropagationPolicyUpdate,
+	})
+
+	clusterBindingInformer := informerFactory.Work().V1alpha2().ClusterResourceBindings().Informer()
+	clusterBindingInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+		FilterFunc: sc.resourceBindingEventFilter,
+		Handler: cache.ResourceEventHandlerFuncs{
+			AddFunc:    sc.onResourceBindingAdd,
+			UpdateFunc: sc.onResourceBindingUpdate,
+		},
+	})
+
+	clusterPolicyInformer := informerFactory.Policy().V1alpha1().ClusterPropagationPolicies().Informer()
+	clusterPolicyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: sc.onClusterPropagationPolicyUpdate,
+	})
+
+	memClusterInformer := informerFactory.Cluster().V1alpha1().Clusters().Informer()
+	memClusterInformer.AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc:    sc.addCluster,
+			UpdateFunc: sc.updateCluster,
+			DeleteFunc: sc.deleteCluster,
+		},
+	)
+
+	// TODO: a new event recorder needed?
+	// eventBroadcaster := record.NewBroadcaster()
+	// eventBroadcaster.StartStructuredLogging(0)
+	// eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: s.KubeClient.CoreV1().Events("")})
+	// s.eventRecorder = eventBroadcaster.NewRecorder(gclient.NewSchema(), corev1.EventSource{Component: "karmada-scheduler"})
+
+}
+
+func (sc *SchedulerCache) resourceBindingEventFilter(obj interface{}) bool {
+	// TODO:
+	return true
+}
+
+func (sc *SchedulerCache) onResourceBindingAdd(obj interface{}) {
+	// TODO:
+}
+
+func (sc *SchedulerCache) onResourceBindingUpdate(old, new interface{}) {
+	// TODO:
+}
+
+func (sc *SchedulerCache) onClusterPropagationPolicyUpdate(old, new interface{}) {
+	// TODO:
+}
+
+func (sc *SchedulerCache) onPropagationPolicyUpdate(old, new interface{}) {
+	// TODO:
+}
+
+func (sc *SchedulerCache) addCluster(obj interface{}) {
+	// TODO:
+}
+
+func (sc *SchedulerCache) updateCluster(old, new interface{}) {
+	// TODO:
+}
+
+func (sc *SchedulerCache) deleteCluster(obj interface{}) {
+	// TODO:
 }
 
 // Run  starts the schedulerCache
