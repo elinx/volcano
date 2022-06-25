@@ -19,6 +19,7 @@ package plugins
 import (
 	"volcano.sh/volcano/pkg/scheduler/framework"
 	"volcano.sh/volcano/pkg/scheduler/plugins/binpack"
+	"volcano.sh/volcano/pkg/scheduler/plugins/clusterlocality"
 	"volcano.sh/volcano/pkg/scheduler/plugins/conformance"
 	"volcano.sh/volcano/pkg/scheduler/plugins/drf"
 	"volcano.sh/volcano/pkg/scheduler/plugins/extender"
@@ -62,4 +63,5 @@ func init() {
 
 	// Plugins for ResourceQuota
 	framework.RegisterPluginBuilder(resourcequota.PluginName, resourcequota.New)
+	framework.RegisterPluginBuilder(clusterlocality.PluginName, clusterlocality.New)
 }

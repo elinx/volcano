@@ -31,7 +31,7 @@ type ClusterInfo struct {
 
 	Clusters     map[ClusterID]*Cluster
 	ClusterTasks map[ClusterTaskID]*ClusterTaskInfo
-	Placements   map[PlacementID]*PlacementInfo
+	Placements   map[PlacementType]map[PlacementID]*PlacementInfo
 }
 
 func (ci ClusterInfo) String() string {

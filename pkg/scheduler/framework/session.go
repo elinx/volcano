@@ -60,7 +60,7 @@ type Session struct {
 
 	Clusters     map[api.ClusterID]*api.Cluster
 	ClusterTasks map[api.ClusterTaskID]*api.ClusterTaskInfo
-	Placements   map[api.PlacementID]*api.PlacementInfo
+	Placements   map[api.PlacementType]map[api.PlacementID]*api.PlacementInfo
 
 	Tiers          []conf.Tier
 	Configurations []conf.Configuration
@@ -92,6 +92,9 @@ type Session struct {
 	reservedNodesFns  map[string]api.ReservedNodesFn
 	victimTasksFns    map[string][]api.VictimTasksFn
 	jobStarvingFns    map[string]api.ValidateFn
+
+	clusterPredicateFns  map[string]api.ClusterPredicateFn
+	batchClusterOrderFns map[string]api.BatchClusterOrderFn
 }
 
 func openSession(cache cache.Cache) *Session {
@@ -135,6 +138,9 @@ func openSession(cache cache.Cache) *Session {
 		reservedNodesFns:  map[string]api.ReservedNodesFn{},
 		victimTasksFns:    map[string][]api.VictimTasksFn{},
 		jobStarvingFns:    map[string]api.ValidateFn{},
+
+		clusterPredicateFns:  map[string]api.ClusterPredicateFn{},
+		batchClusterOrderFns: map[string]api.BatchClusterOrderFn{},
 	}
 
 	snapshot := cache.Snapshot()

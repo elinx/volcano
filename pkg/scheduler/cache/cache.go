@@ -141,7 +141,7 @@ type SchedulerCache struct {
 
 	Clusters     map[schedulingapi.ClusterID]*schedulingapi.Cluster
 	ClusterTasks map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo
-	Placements   map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo
+	Placements   map[schedulingapi.PlacementType]map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo
 
 	NamespaceCollection map[string]*schedulingapi.NamespaceCollection
 
@@ -428,7 +428,7 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 		PriorityClasses:     make(map[string]*schedulingv1.PriorityClass),
 		Clusters:            make(map[schedulingapi.ClusterID]*schedulingapi.Cluster),
 		ClusterTasks:        make(map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo),
-		Placements:          make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
+		Placements:          make(map[schedulingapi.PlacementType]map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
 		errTasks:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		deletedJobs:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		kubeClient:          kubeClient,
@@ -440,6 +440,10 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 
 		NodeList: []string{},
 	}
+	clustered := make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo)
+	namespaced := make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo)
+	sc.Placements[schedulingapi.ClusterPlacement] = clustered
+	sc.Placements[schedulingapi.NamespacePlacement] = namespaced
 	if len(nodeSelectors) > 0 {
 		for _, nodeSelectorLabel := range nodeSelectors {
 			nodeSelectorLabelLen := len(nodeSelectorLabel)
@@ -1093,8 +1097,12 @@ func (sc *SchedulerCache) Snapshot() *schedulingapi.ClusterInfo {
 
 		Clusters:     make(map[schedulingapi.ClusterID]*schedulingapi.Cluster),
 		ClusterTasks: make(map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo),
-		Placements:   make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
+		Placements:   make(map[schedulingapi.PlacementType]map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
 	}
+	clustered := make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo)
+	namespaced := make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo)
+	snapshot.Placements[schedulingapi.ClusterPlacement] = clustered
+	snapshot.Placements[schedulingapi.NamespacePlacement] = namespaced
 
 	copy(snapshot.NodeList, sc.NodeList)
 	for _, value := range sc.Nodes {

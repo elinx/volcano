@@ -74,6 +74,15 @@ func (ssn *Session) AddPredicateFn(name string, pf api.PredicateFn) {
 	ssn.predicateFns[name] = pf
 }
 
+// AddClusterPredicateFn add Predicate function
+func (ssn *Session) AddClusterPredicateFn(name string, pf api.ClusterPredicateFn) {
+	ssn.clusterPredicateFns[name] = pf
+}
+
+func (ssn *Session) AddBatchClusterOrderFn(name string, pf api.BatchClusterOrderFn) {
+	ssn.batchClusterOrderFns[name] = pf
+}
+
 // AddBestNodeFn add BestNode function
 func (ssn *Session) AddBestNodeFn(name string, pf api.BestNodeFn) {
 	ssn.bestNodeFns[name] = pf
@@ -637,6 +646,51 @@ func (ssn *Session) PredicateFn(task *api.TaskInfo, node *api.NodeInfo) error {
 		}
 	}
 	return nil
+}
+
+// PredicateFn invoke predicate function of the plugins
+func (ssn *Session) ClusterPredicateFn(task *api.ClusterTaskInfo, cluster *api.Cluster, placement *api.PlacementInfo) error {
+	for _, tier := range ssn.Tiers {
+		for _, plugin := range tier.Plugins {
+			if !isEnabled(plugin.EnabledPredicate) {
+				continue
+			}
+			pfn, found := ssn.clusterPredicateFns[plugin.Name]
+			if !found {
+				continue
+			}
+			err := pfn(task, cluster, placement)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// BatchNodeOrderFn invoke node order function of the plugins
+func (ssn *Session) BatchClusterOrderFn(task *api.ClusterTaskInfo, clusters []*api.Cluster,
+	placement *api.PlacementInfo) (map[string]float64, error) {
+	priorityScore := make(map[string]float64, len(clusters))
+	for _, tier := range ssn.Tiers {
+		for _, plugin := range tier.Plugins {
+			if !isEnabled(plugin.EnabledNodeOrder) {
+				continue
+			}
+			pfn, found := ssn.batchClusterOrderFns[plugin.Name]
+			if !found {
+				continue
+			}
+			score, err := pfn(task, clusters, placement)
+			if err != nil {
+				return nil, err
+			}
+			for nodeName, score := range score {
+				priorityScore[nodeName] += score
+			}
+		}
+	}
+	return priorityScore, nil
 }
 
 // BestNodeFn invoke bestNode function of the plugins
