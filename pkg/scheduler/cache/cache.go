@@ -31,7 +31,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -53,6 +52,9 @@ import (
 
 	karmadaclientset "github.com/karmada-io/karmada/pkg/generated/clientset/versioned"
 	karmadaInformerfactory "github.com/karmada-io/karmada/pkg/generated/informers/externalversions"
+	clusterv1alpha1 "github.com/karmada-io/karmada/pkg/generated/informers/externalversions/cluster/v1alpha1"
+	policyv1alpha1 "github.com/karmada-io/karmada/pkg/generated/informers/externalversions/policy/v1alpha1"
+	resourcebindingv1alpha1 "github.com/karmada-io/karmada/pkg/generated/informers/externalversions/work/v1alpha1"
 	batch "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 	"volcano.sh/apis/pkg/apis/scheduling"
 	schedulingscheme "volcano.sh/apis/pkg/apis/scheduling/scheme"
@@ -115,6 +117,12 @@ type SchedulerCache struct {
 	csiStorageCapacityInformer storagev1beta1.CSIStorageCapacityInformer
 	cpuInformer                cpuinformerv1.NumatopologyInformer
 
+	bindingInformer        resourcebindingv1alpha1.ResourceBindingInformer
+	clusterBindingInformer resourcebindingv1alpha1.ClusterResourceBindingInformer
+	policyInformer         policyv1alpha1.PropagationPolicyInformer
+	clusterPolicyInformer  policyv1alpha1.ClusterPropagationPolicyInformer
+	clusterInformer        clusterv1alpha1.ClusterInformer
+
 	Binder         Binder
 	Evictor        Evictor
 	StatusUpdater  StatusUpdater
@@ -131,13 +139,18 @@ type SchedulerCache struct {
 	defaultPriorityClass *schedulingv1.PriorityClass
 	defaultPriority      int32
 
+	Clusters     map[schedulingapi.ClusterID]*schedulingapi.Cluster
+	ClusterTasks map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo
+	Placements   map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo
+
 	NamespaceCollection map[string]*schedulingapi.NamespaceCollection
 
 	errTasks    workqueue.RateLimitingInterface
 	deletedJobs workqueue.RateLimitingInterface
 
-	informerFactory   informers.SharedInformerFactory
-	vcInformerFactory vcinformer.SharedInformerFactory
+	informerFactory        informers.SharedInformerFactory
+	vcInformerFactory      vcinformer.SharedInformerFactory
+	karmadaInformerFactory karmadaInformerfactory.SharedInformerFactory
 
 	BindFlowChannel chan *schedulingapi.TaskInfo
 	bindCache       []*schedulingapi.TaskInfo
@@ -394,7 +407,7 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 	}
 
 	// create default queue
-	reclaimable := true
+	/*reclaimable := true
 	defaultQue := vcv1beta1.Queue{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: defaultQueue,
@@ -406,13 +419,16 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 	}
 	if _, err := vcClient.SchedulingV1beta1().Queues().Create(context.TODO(), &defaultQue, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
 		panic(fmt.Sprintf("failed init default queue, with err: %v", err))
-	}
+	}*/
 
 	sc := &SchedulerCache{
 		Jobs:                make(map[schedulingapi.JobID]*schedulingapi.JobInfo),
 		Nodes:               make(map[string]*schedulingapi.NodeInfo),
 		Queues:              make(map[schedulingapi.QueueID]*schedulingapi.QueueInfo),
 		PriorityClasses:     make(map[string]*schedulingv1.PriorityClass),
+		Clusters:            make(map[schedulingapi.ClusterID]*schedulingapi.Cluster),
+		ClusterTasks:        make(map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo),
+		Placements:          make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
 		errTasks:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		deletedJobs:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		kubeClient:          kubeClient,
@@ -518,8 +534,14 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 	sc.csiDriverInformer = informerFactory.Storage().V1().CSIDrivers()
 	sc.csiStorageCapacityInformer = informerFactory.Storage().V1beta1().CSIStorageCapacities()
 
-	kinformerFactory := karmadaInformerfactory.NewSharedInformerFactory(karmadaClient, 0)
-	addClusterEventHandlers(sc, kinformerFactory)
+	sc.karmadaInformerFactory = karmadaInformerfactory.NewSharedInformerFactory(karmadaClient, 0)
+	sc.addClusterEventHandlers()
+
+	clusters, err := karmadaClient.ClusterV1alpha1().Clusters().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		panic(err)
+	}
+	klog.V(3).Infof("---clusters:%v", clusters)
 	var capacityCheck *volumescheduling.CapacityCheck
 	if options.ServerOpts.EnableCSIStorage {
 		capacityCheck = &volumescheduling.CapacityCheck{
@@ -625,43 +647,56 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 	return sc
 }
 
-func addClusterEventHandlers(sc *SchedulerCache, informerFactory karmadaInformerfactory.SharedInformerFactory) {
-	bindingInformer := informerFactory.Work().V1alpha2().ResourceBindings().Informer()
-	bindingInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+func (sc *SchedulerCache) addClusterEventHandlers() {
+	sc.bindingInformer = sc.karmadaInformerFactory.Work().V1alpha1().ResourceBindings()
+	sc.bindingInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: sc.resourceBindingEventFilter,
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc:    sc.onResourceBindingAdd,
 			UpdateFunc: sc.onResourceBindingUpdate,
+			DeleteFunc: sc.onResourceBindingDelete,
 		},
 	})
 
-	policyInformer := informerFactory.Policy().V1alpha1().PropagationPolicies().Informer()
-	policyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	sc.policyInformer = sc.karmadaInformerFactory.Policy().V1alpha1().PropagationPolicies()
+	sc.policyInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    sc.onPropagationPolicyAdd,
 		UpdateFunc: sc.onPropagationPolicyUpdate,
+		DeleteFunc: sc.onPropagationPolicyDelete,
 	})
 
-	clusterBindingInformer := informerFactory.Work().V1alpha2().ClusterResourceBindings().Informer()
-	clusterBindingInformer.AddEventHandler(cache.FilteringResourceEventHandler{
+	sc.clusterBindingInformer = sc.karmadaInformerFactory.Work().V1alpha1().ClusterResourceBindings()
+	sc.clusterBindingInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: sc.resourceBindingEventFilter,
 		Handler: cache.ResourceEventHandlerFuncs{
 			AddFunc:    sc.onResourceBindingAdd,
 			UpdateFunc: sc.onResourceBindingUpdate,
+			DeleteFunc: sc.onResourceBindingDelete,
 		},
 	})
 
-	clusterPolicyInformer := informerFactory.Policy().V1alpha1().ClusterPropagationPolicies().Informer()
-	clusterPolicyInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	sc.clusterPolicyInformer = sc.karmadaInformerFactory.Policy().V1alpha1().ClusterPropagationPolicies()
+	sc.clusterPolicyInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    sc.onClusterPropagationPolicyAdd,
 		UpdateFunc: sc.onClusterPropagationPolicyUpdate,
+		DeleteFunc: sc.onClusterPropagationPolicyDelete,
 	})
 
-	memClusterInformer := informerFactory.Cluster().V1alpha1().Clusters().Informer()
-	memClusterInformer.AddEventHandler(
+	sc.clusterInformer = sc.karmadaInformerFactory.Cluster().V1alpha1().Clusters()
+	sc.clusterInformer.Informer().AddEventHandler(
 		cache.ResourceEventHandlerFuncs{
 			AddFunc:    sc.addCluster,
 			UpdateFunc: sc.updateCluster,
 			DeleteFunc: sc.deleteCluster,
 		},
 	)
+
+	// lister := sc.karmadaInformerFactory.Cluster().V1alpha1().Clusters().Lister()
+	// a, err := lister.List(labels.Everything())
+	// if err != nil {
+	// 	panic(err)
+	// }
+	// klog.V(3).Info("---- clusters ----: %v", a)
 
 	// TODO: a new event recorder needed?
 	// eventBroadcaster := record.NewBroadcaster()
@@ -672,42 +707,16 @@ func addClusterEventHandlers(sc *SchedulerCache, informerFactory karmadaInformer
 }
 
 func (sc *SchedulerCache) resourceBindingEventFilter(obj interface{}) bool {
+	klog.V(1).Infof("enter...")
 	// TODO:
 	return true
-}
-
-func (sc *SchedulerCache) onResourceBindingAdd(obj interface{}) {
-	// TODO:
-}
-
-func (sc *SchedulerCache) onResourceBindingUpdate(old, new interface{}) {
-	// TODO:
-}
-
-func (sc *SchedulerCache) onClusterPropagationPolicyUpdate(old, new interface{}) {
-	// TODO:
-}
-
-func (sc *SchedulerCache) onPropagationPolicyUpdate(old, new interface{}) {
-	// TODO:
-}
-
-func (sc *SchedulerCache) addCluster(obj interface{}) {
-	// TODO:
-}
-
-func (sc *SchedulerCache) updateCluster(old, new interface{}) {
-	// TODO:
-}
-
-func (sc *SchedulerCache) deleteCluster(obj interface{}) {
-	// TODO:
 }
 
 // Run  starts the schedulerCache
 func (sc *SchedulerCache) Run(stopCh <-chan struct{}) {
 	sc.informerFactory.Start(stopCh)
 	sc.vcInformerFactory.Start(stopCh)
+	sc.karmadaInformerFactory.Start(stopCh)
 	// Re-sync error tasks.
 	go wait.Until(sc.processResyncTask, 0, stopCh)
 
@@ -728,6 +737,7 @@ func (sc *SchedulerCache) Run(stopCh <-chan struct{}) {
 func (sc *SchedulerCache) WaitForCacheSync(stopCh <-chan struct{}) {
 	sc.informerFactory.WaitForCacheSync(stopCh)
 	sc.vcInformerFactory.WaitForCacheSync(stopCh)
+	sc.karmadaInformerFactory.WaitForCacheSync(stopCh)
 }
 
 // findJobAndTask returns job and the task info
@@ -1080,6 +1090,10 @@ func (sc *SchedulerCache) Snapshot() *schedulingapi.ClusterInfo {
 		NamespaceInfo:  make(map[schedulingapi.NamespaceName]*schedulingapi.NamespaceInfo),
 		RevocableNodes: make(map[string]*schedulingapi.NodeInfo),
 		NodeList:       make([]string, len(sc.NodeList)),
+
+		Clusters:     make(map[schedulingapi.ClusterID]*schedulingapi.Cluster),
+		ClusterTasks: make(map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo),
+		Placements:   make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
 	}
 
 	copy(snapshot.NodeList, sc.NodeList)
@@ -1154,8 +1168,20 @@ func (sc *SchedulerCache) Snapshot() *schedulingapi.ClusterInfo {
 	}
 	wg.Wait()
 
+	for key, val := range sc.Clusters {
+		snapshot.Clusters[key] = val
+	}
+	for key, val := range sc.ClusterTasks {
+		snapshot.ClusterTasks[key] = val
+	}
+	for key, val := range sc.Placements {
+		snapshot.Placements[key] = val
+	}
+
 	klog.V(3).Infof("There are <%d> Jobs, <%d> Queues and <%d> Nodes in total for scheduling.",
 		len(snapshot.Jobs), len(snapshot.Queues), len(snapshot.Nodes))
+	klog.V(3).Infof("There are <%d> clusters, <%d> cluster tasks, <%d> placements for scheduling.",
+		len(snapshot.Clusters), len(snapshot.ClusterTasks), len(snapshot.Placements))
 
 	return snapshot
 }

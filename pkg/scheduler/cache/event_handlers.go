@@ -37,6 +37,13 @@ import (
 	"volcano.sh/apis/pkg/apis/utils"
 	schedulingapi "volcano.sh/volcano/pkg/scheduler/api"
 	"volcano.sh/volcano/pkg/scheduler/metrics"
+
+	// kclusterv1alpha1 "github.com/karmada-io/api/cluster/v1alpha1"
+	// kpolicyv1alpha1 "github.com/karmada-io/api/policy/v1alpha1"
+	// kworkv1alpha1 "github.com/karmada-io/api/work/v1alpha1"
+	kclusterv1alpha1 "github.com/karmada-io/karmada/pkg/apis/cluster/v1alpha1"
+	kpolicyv1alpha1 "github.com/karmada-io/karmada/pkg/apis/policy/v1alpha1"
+	kworkv1alpha1 "github.com/karmada-io/karmada/pkg/apis/work/v1alpha1"
 )
 
 func isTerminated(status schedulingapi.TaskStatus) bool {
@@ -924,4 +931,176 @@ func (sc *SchedulerCache) AddJob(obj interface{}) {
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
 	sc.Jobs[job.UID] = job
+}
+
+func (sc *SchedulerCache) onResourceBindingAdd(obj interface{}) {
+	klog.V(1).Infof("enter...")
+	rb, ok := obj.(*kworkv1alpha1.ResourceBinding)
+	if !ok {
+		klog.Errorf("Cannot convert to ResourceBinding: %v", rb)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	sc.ClusterTasks[schedulingapi.ClusterTaskID(rb.UID)] = schedulingapi.NewClusterTaskInfo(rb)
+}
+
+func (sc *SchedulerCache) onResourceBindingUpdate(old, new interface{}) {
+	klog.V(1).Infof("enter...")
+	oldrb, ok := old.(*kworkv1alpha1.ResourceBinding)
+	if !ok {
+		klog.Errorf("Cannot convert to ResourceBinding: %v", oldrb)
+		return
+	}
+	newrb, ok := old.(*kworkv1alpha1.ResourceBinding)
+	if !ok {
+		klog.Errorf("Cannot convert to ResourceBinding: %v", newrb)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	delete(sc.ClusterTasks, schedulingapi.ClusterTaskID(oldrb.UID))
+	sc.ClusterTasks[schedulingapi.ClusterTaskID(newrb.UID)] = schedulingapi.NewClusterTaskInfo(newrb)
+}
+
+func (sc *SchedulerCache) onResourceBindingDelete(obj interface{}) {
+	klog.V(1).Infof("enter...")
+	rb, ok := obj.(*kworkv1alpha1.ResourceBinding)
+	if !ok {
+		klog.Errorf("Cannot convert to ResourceBinding: %v", rb)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	delete(sc.ClusterTasks, schedulingapi.ClusterTaskID(rb.UID))
+}
+
+func (sc *SchedulerCache) onClusterPropagationPolicyAdd(obj interface{}) {
+	klog.V(1).Infof("enter...")
+	policy, ok := obj.(*kpolicyv1alpha1.ClusterPropagationPolicy)
+	if !ok {
+		klog.Errorf("Cannot convert to ClusterPropagationPolicy: %v", policy)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	sc.Placements[schedulingapi.PlacementID(policy.UID)] =
+		schedulingapi.NewPlacementInfo(&policy.Spec.Placement, schedulingapi.ClusterPlacement)
+}
+
+func (sc *SchedulerCache) onClusterPropagationPolicyUpdate(old, new interface{}) {
+	klog.V(1).Infof("enter...")
+	oldPolicy, ok := old.(*kpolicyv1alpha1.ClusterPropagationPolicy)
+	if !ok {
+		klog.Errorf("Cannot convert to ClusterPropagationPolicy: %v", oldPolicy)
+		return
+	}
+	newPolicy, ok := old.(*kpolicyv1alpha1.ClusterPropagationPolicy)
+	if !ok {
+		klog.Errorf("Cannot convert to ClusterPropagationPolicy: %v", newPolicy)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	delete(sc.Placements, schedulingapi.PlacementID(oldPolicy.UID))
+	sc.Placements[schedulingapi.PlacementID(newPolicy.UID)] =
+		schedulingapi.NewPlacementInfo(&newPolicy.Spec.Placement, schedulingapi.ClusterPlacement)
+}
+
+func (sc *SchedulerCache) onClusterPropagationPolicyDelete(obj interface{}) {
+	klog.V(1).Infof("enter...")
+	policy, ok := obj.(*kpolicyv1alpha1.ClusterPropagationPolicy)
+	if !ok {
+		klog.Errorf("Cannot convert to ClusterPropagationPolicy: %v", policy)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	delete(sc.Placements, schedulingapi.PlacementID(policy.UID))
+}
+
+func (sc *SchedulerCache) onPropagationPolicyAdd(obj interface{}) {
+	klog.V(1).Infof("enter...")
+	policy, ok := obj.(*kpolicyv1alpha1.PropagationPolicy)
+	if !ok {
+		klog.Errorf("Cannot convert to PropagationPolicy: %v", policy)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	sc.Placements[schedulingapi.PlacementID(policy.UID)] =
+		schedulingapi.NewPlacementInfo(&policy.Spec.Placement, schedulingapi.NamespacePlacement)
+}
+
+func (sc *SchedulerCache) onPropagationPolicyUpdate(old, new interface{}) {
+	klog.V(1).Infof("enter...")
+	oldPolicy, ok := old.(*kpolicyv1alpha1.PropagationPolicy)
+	if !ok {
+		klog.Errorf("Cannot convert to PropagationPolicy: %v", oldPolicy)
+		return
+	}
+	newPolicy, ok := old.(*kpolicyv1alpha1.PropagationPolicy)
+	if !ok {
+		klog.Errorf("Cannot convert to PropagationPolicy: %v", newPolicy)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	delete(sc.Placements, schedulingapi.PlacementID(oldPolicy.UID))
+	sc.Placements[schedulingapi.PlacementID(newPolicy.UID)] =
+		schedulingapi.NewPlacementInfo(&newPolicy.Spec.Placement, schedulingapi.NamespacePlacement)
+}
+
+func (sc *SchedulerCache) onPropagationPolicyDelete(obj interface{}) {
+	klog.V(1).Infof("enter...")
+	policy, ok := obj.(*kpolicyv1alpha1.PropagationPolicy)
+	if !ok {
+		klog.Errorf("Cannot convert to PropagationPolicy: %v", policy)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	delete(sc.Placements, schedulingapi.PlacementID(policy.UID))
+}
+
+func (sc *SchedulerCache) addCluster(obj interface{}) {
+	klog.V(3).Infof("enter...")
+
+	cluster, ok := obj.(*kclusterv1alpha1.Cluster)
+	if !ok {
+		klog.Errorf("Cannot convert to Cluster obj: %v, type: %T", obj, obj)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	sc.Clusters[schedulingapi.ClusterID(cluster.UID)] = schedulingapi.NewCluster(cluster)
+}
+
+func (sc *SchedulerCache) updateCluster(old, new interface{}) {
+	klog.V(3).Infof("enter...")
+	oldCluster, ok := old.(*kclusterv1alpha1.Cluster)
+	if !ok {
+		klog.Errorf("Cannot convert old to *kclusterv1alpha1.Cluster: %v", old)
+		return
+	}
+	newCluster, ok := new.(*kclusterv1alpha1.Cluster)
+	if !ok {
+		klog.Errorf("Cannot convert new to *kclusterv1alpha1.Cluster: %v", new)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	delete(sc.Clusters, schedulingapi.ClusterID(oldCluster.UID))
+	sc.Clusters[schedulingapi.ClusterID(newCluster.UID)] = schedulingapi.NewCluster(newCluster)
+}
+
+func (sc *SchedulerCache) deleteCluster(obj interface{}) {
+	klog.V(3).Infof("enter...")
+	cluster, ok := obj.(*kclusterv1alpha1.Cluster)
+	if !ok {
+		klog.Errorf("Cannot convert to Cluster: %v", cluster)
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	delete(sc.Clusters, schedulingapi.ClusterID(cluster.UID))
 }

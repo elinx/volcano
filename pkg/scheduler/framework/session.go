@@ -58,6 +58,10 @@ type Session struct {
 	Queues         map[api.QueueID]*api.QueueInfo
 	NamespaceInfo  map[api.NamespaceName]*api.NamespaceInfo
 
+	Clusters     map[api.ClusterID]*api.Cluster
+	ClusterTasks map[api.ClusterTaskID]*api.ClusterTaskInfo
+	Placements   map[api.PlacementID]*api.PlacementInfo
+
 	Tiers          []conf.Tier
 	Configurations []conf.Configuration
 	NodeList       []*api.NodeInfo
@@ -166,6 +170,9 @@ func openSession(cache cache.Cache) *Session {
 	ssn.RevocableNodes = snapshot.RevocableNodes
 	ssn.Queues = snapshot.Queues
 	ssn.NamespaceInfo = snapshot.NamespaceInfo
+	ssn.Clusters = snapshot.Clusters
+	ssn.ClusterTasks = snapshot.ClusterTasks
+	ssn.Placements = snapshot.Placements
 	// calculate all nodes' resource only once in each schedule cycle, other plugins can clone it when need
 	for _, n := range ssn.Nodes {
 		ssn.TotalResource.Add(n.Allocatable)
@@ -173,6 +180,8 @@ func openSession(cache cache.Cache) *Session {
 
 	klog.V(3).Infof("Open Session %v with <%d> Job and <%d> Queues",
 		ssn.UID, len(ssn.Jobs), len(ssn.Queues))
+	klog.V(3).Infof("There are <%d> clusters, <%d> cluster tasks, <%d> placements for scheduling.",
+		len(ssn.Clusters), len(ssn.ClusterTasks), len(ssn.Placements))
 
 	return ssn
 }

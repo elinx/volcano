@@ -20,6 +20,7 @@ CRD_OPTIONS ?= "crd:crdVersions=v1,generateEmbeddedObjectMeta=true"
 CC ?= "gcc"
 SUPPORT_PLUGINS ?= "no"
 CRD_VERSION ?= v1
+ARCHIVING_NAME=volcano
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -56,14 +57,14 @@ include Makefile.def
 
 .EXPORT_ALL_VARIABLES:
 
-all: vc-scheduler vc-controller-manager vc-webhook-manager vcctl command-lines
+all: vc-scheduler vc-controller-manager vc-webhook-manager vcctl command-lines ucs-images
 
 init:
 	mkdir -p ${BIN_DIR}
 	mkdir -p ${RELEASE_DIR}
 
 vc-scheduler: init
-	go build -ldflags ${LD_FLAGS} -o=${BIN_DIR}/vc-scheduler ./cmd/scheduler
+	CGO_ENABLED=0 go build -ldflags ${LD_FLAGS} -o=${BIN_DIR}/vc-scheduler ./cmd/scheduler
 
 vc-controller-manager: init
 	go build -ldflags ${LD_FLAGS} -o=${BIN_DIR}/vc-controller-manager ./cmd/controller-manager
@@ -73,6 +74,14 @@ vc-webhook-manager: init
 
 vcctl: init
 	go build -ldflags ${LD_FLAGS} -o=${BIN_DIR}/vcctl ./cmd/cli
+
+ucs-images: vc-scheduler init
+	cp ${BIN_DIR}/vc-scheduler installer/dockerfile/scheduler/vc-scheduler
+	docker build --no-cache -t $(ARCHIVING_NAME)-scheduler-linux-amd64:$(TAG) ./installer/dockerfile/scheduler
+	docker save $(ARCHIVING_NAME)-scheduler-linux-amd64:$(TAG) > $(BIN_DIR)/$(ARCHIVING_NAME)-scheduler-linux-amd64-$(TAG).tar
+	rm installer/dockerfile/scheduler/vc-scheduler
+
+	kind load image-archive $(BIN_DIR)/$(ARCHIVING_NAME)-scheduler-linux-amd64-$(TAG).tar --name karmada-host
 
 image_bins: init
 	GO111MODULE=off go get github.com/mitchellh/gox
