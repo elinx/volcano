@@ -49,11 +49,13 @@ type PlacementInfo struct {
 	Name      string
 	Type      PlacementType
 	Placement *kpolicyv1alpha1.Placement
+	Selector  []kpolicyv1alpha1.ResourceSelector
 }
 
-func NewPlacementInfo(p *kpolicyv1alpha1.Placement, t PlacementType) *PlacementInfo {
+func NewPlacementInfo(p *kpolicyv1alpha1.Placement, t PlacementType, selector []kpolicyv1alpha1.ResourceSelector) *PlacementInfo {
 	return &PlacementInfo{
 		Type:      t,
 		Placement: p,
+		Selector:  selector,
 	}
 }

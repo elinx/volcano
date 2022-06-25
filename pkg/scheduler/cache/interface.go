@@ -17,6 +17,7 @@ limitations under the License.
 package cache
 
 import (
+	karmadaclientset "github.com/karmada-io/karmada/pkg/generated/clientset/versioned"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
@@ -69,6 +70,7 @@ type Cache interface {
 
 	// Client returns the kubernetes clientSet, which can be used by plugins
 	Client() kubernetes.Interface
+	KarmadaClient() karmadaclientset.Interface
 
 	UpdateSchedulerNumaInfo(sets map[string]api.ResNumaSets) error
 

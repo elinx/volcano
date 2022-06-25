@@ -95,9 +95,10 @@ func New(config *rest.Config, schedulerName string, defaultQueue string, nodeSel
 type SchedulerCache struct {
 	sync.Mutex
 
-	kubeClient   *kubernetes.Clientset
-	vcClient     *vcclient.Clientset
-	defaultQueue string
+	kubeClient    *kubernetes.Clientset
+	vcClient      *vcclient.Clientset
+	karmadaClient *karmadaclientset.Clientset
+	defaultQueue  string
 	// schedulerName is the name for volcano scheduler
 	schedulerName      string
 	nodeSelectorLabels map[string]string
@@ -141,7 +142,7 @@ type SchedulerCache struct {
 
 	Clusters     map[schedulingapi.ClusterID]*schedulingapi.Cluster
 	ClusterTasks map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo
-	Placements   map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo
+	Placements   map[schedulingapi.PlacementType]map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo
 
 	NamespaceCollection map[string]*schedulingapi.NamespaceCollection
 
@@ -428,11 +429,12 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 		PriorityClasses:     make(map[string]*schedulingv1.PriorityClass),
 		Clusters:            make(map[schedulingapi.ClusterID]*schedulingapi.Cluster),
 		ClusterTasks:        make(map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo),
-		Placements:          make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
+		Placements:          make(map[schedulingapi.PlacementType]map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
 		errTasks:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		deletedJobs:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		kubeClient:          kubeClient,
 		vcClient:            vcClient,
+		karmadaClient:       karmadaClient,
 		defaultQueue:        defaultQueue,
 		schedulerName:       schedulerName,
 		nodeSelectorLabels:  make(map[string]string),
@@ -440,6 +442,10 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 
 		NodeList: []string{},
 	}
+	clustered := make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo)
+	namespaced := make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo)
+	sc.Placements[schedulingapi.ClusterPlacement] = clustered
+	sc.Placements[schedulingapi.NamespacePlacement] = namespaced
 	if len(nodeSelectors) > 0 {
 		for _, nodeSelectorLabel := range nodeSelectors {
 			nodeSelectorLabelLen := len(nodeSelectorLabel)
@@ -868,6 +874,10 @@ func (sc *SchedulerCache) Client() kubernetes.Interface {
 	return sc.kubeClient
 }
 
+func (sc *SchedulerCache) KarmadaClient() karmadaclientset.Interface {
+	return sc.karmadaClient
+}
+
 // SharedInformerFactory returns the scheduler SharedInformerFactory
 func (sc *SchedulerCache) SharedInformerFactory() informers.SharedInformerFactory {
 	return sc.informerFactory
@@ -1093,8 +1103,12 @@ func (sc *SchedulerCache) Snapshot() *schedulingapi.ClusterInfo {
 
 		Clusters:     make(map[schedulingapi.ClusterID]*schedulingapi.Cluster),
 		ClusterTasks: make(map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo),
-		Placements:   make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
+		Placements:   make(map[schedulingapi.PlacementType]map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
 	}
+	clustered := make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo)
+	namespaced := make(map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo)
+	snapshot.Placements[schedulingapi.ClusterPlacement] = clustered
+	snapshot.Placements[schedulingapi.NamespacePlacement] = namespaced
 
 	copy(snapshot.NodeList, sc.NodeList)
 	for _, value := range sc.Nodes {

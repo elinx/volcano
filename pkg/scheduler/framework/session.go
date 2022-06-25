@@ -19,6 +19,7 @@ package framework
 import (
 	"fmt"
 
+	karmadaclientset "github.com/karmada-io/karmada/pkg/generated/clientset/versioned"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -43,6 +44,7 @@ type Session struct {
 	UID types.UID
 
 	kubeClient      kubernetes.Interface
+	karmadaClient   karmadaclientset.Interface
 	recorder        record.EventRecorder
 	cache           cache.Cache
 	informerFactory informers.SharedInformerFactory
@@ -60,7 +62,7 @@ type Session struct {
 
 	Clusters     map[api.ClusterID]*api.Cluster
 	ClusterTasks map[api.ClusterTaskID]*api.ClusterTaskInfo
-	Placements   map[api.PlacementID]*api.PlacementInfo
+	Placements   map[api.PlacementType]map[api.PlacementID]*api.PlacementInfo
 
 	Tiers          []conf.Tier
 	Configurations []conf.Configuration
@@ -92,12 +94,16 @@ type Session struct {
 	reservedNodesFns  map[string]api.ReservedNodesFn
 	victimTasksFns    map[string][]api.VictimTasksFn
 	jobStarvingFns    map[string]api.ValidateFn
+
+	clusterPredicateFns  map[string]api.ClusterPredicateFn
+	batchClusterOrderFns map[string]api.BatchClusterOrderFn
 }
 
 func openSession(cache cache.Cache) *Session {
 	ssn := &Session{
 		UID:             uuid.NewUUID(),
 		kubeClient:      cache.Client(),
+		karmadaClient:   cache.KarmadaClient(),
 		recorder:        cache.EventRecorder(),
 		cache:           cache,
 		informerFactory: cache.SharedInformerFactory(),
@@ -135,6 +141,9 @@ func openSession(cache cache.Cache) *Session {
 		reservedNodesFns:  map[string]api.ReservedNodesFn{},
 		victimTasksFns:    map[string][]api.VictimTasksFn{},
 		jobStarvingFns:    map[string]api.ValidateFn{},
+
+		clusterPredicateFns:  map[string]api.ClusterPredicateFn{},
+		batchClusterOrderFns: map[string]api.BatchClusterOrderFn{},
 	}
 
 	snapshot := cache.Snapshot()
@@ -473,6 +482,10 @@ func (ssn *Session) UpdateSchedulerNumaInfo(AllocatedSets map[string]api.ResNuma
 // KubeClient returns the kubernetes client
 func (ssn Session) KubeClient() kubernetes.Interface {
 	return ssn.kubeClient
+}
+
+func (ssn Session) KarmadaClient() karmadaclientset.Interface {
+	return ssn.karmadaClient
 }
 
 // InformerFactory returns the scheduler ShareInformerFactory

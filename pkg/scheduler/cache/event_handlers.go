@@ -984,8 +984,8 @@ func (sc *SchedulerCache) onClusterPropagationPolicyAdd(obj interface{}) {
 	}
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
-	sc.Placements[schedulingapi.PlacementID(policy.UID)] =
-		schedulingapi.NewPlacementInfo(&policy.Spec.Placement, schedulingapi.ClusterPlacement)
+	sc.Placements[schedulingapi.ClusterPlacement][schedulingapi.PlacementID(policy.UID)] =
+		schedulingapi.NewPlacementInfo(&policy.Spec.Placement, schedulingapi.ClusterPlacement, policy.Spec.ResourceSelectors)
 }
 
 func (sc *SchedulerCache) onClusterPropagationPolicyUpdate(old, new interface{}) {
@@ -1002,9 +1002,9 @@ func (sc *SchedulerCache) onClusterPropagationPolicyUpdate(old, new interface{})
 	}
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
-	delete(sc.Placements, schedulingapi.PlacementID(oldPolicy.UID))
-	sc.Placements[schedulingapi.PlacementID(newPolicy.UID)] =
-		schedulingapi.NewPlacementInfo(&newPolicy.Spec.Placement, schedulingapi.ClusterPlacement)
+	delete(sc.Placements[schedulingapi.ClusterPlacement], schedulingapi.PlacementID(oldPolicy.UID))
+	sc.Placements[schedulingapi.ClusterPlacement][schedulingapi.PlacementID(newPolicy.UID)] =
+		schedulingapi.NewPlacementInfo(&newPolicy.Spec.Placement, schedulingapi.ClusterPlacement, newPolicy.Spec.ResourceSelectors)
 }
 
 func (sc *SchedulerCache) onClusterPropagationPolicyDelete(obj interface{}) {
@@ -1016,7 +1016,7 @@ func (sc *SchedulerCache) onClusterPropagationPolicyDelete(obj interface{}) {
 	}
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
-	delete(sc.Placements, schedulingapi.PlacementID(policy.UID))
+	delete(sc.Placements[schedulingapi.ClusterPlacement], schedulingapi.PlacementID(policy.UID))
 }
 
 func (sc *SchedulerCache) onPropagationPolicyAdd(obj interface{}) {
@@ -1028,8 +1028,8 @@ func (sc *SchedulerCache) onPropagationPolicyAdd(obj interface{}) {
 	}
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
-	sc.Placements[schedulingapi.PlacementID(policy.UID)] =
-		schedulingapi.NewPlacementInfo(&policy.Spec.Placement, schedulingapi.NamespacePlacement)
+	sc.Placements[schedulingapi.NamespacePlacement][schedulingapi.PlacementID(policy.UID)] =
+		schedulingapi.NewPlacementInfo(&policy.Spec.Placement, schedulingapi.NamespacePlacement, policy.Spec.ResourceSelectors)
 }
 
 func (sc *SchedulerCache) onPropagationPolicyUpdate(old, new interface{}) {
@@ -1046,9 +1046,9 @@ func (sc *SchedulerCache) onPropagationPolicyUpdate(old, new interface{}) {
 	}
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
-	delete(sc.Placements, schedulingapi.PlacementID(oldPolicy.UID))
-	sc.Placements[schedulingapi.PlacementID(newPolicy.UID)] =
-		schedulingapi.NewPlacementInfo(&newPolicy.Spec.Placement, schedulingapi.NamespacePlacement)
+	delete(sc.Placements[schedulingapi.NamespacePlacement], schedulingapi.PlacementID(oldPolicy.UID))
+	sc.Placements[schedulingapi.NamespacePlacement][schedulingapi.PlacementID(newPolicy.UID)] =
+		schedulingapi.NewPlacementInfo(&newPolicy.Spec.Placement, schedulingapi.NamespacePlacement, newPolicy.Spec.ResourceSelectors)
 }
 
 func (sc *SchedulerCache) onPropagationPolicyDelete(obj interface{}) {
@@ -1060,7 +1060,7 @@ func (sc *SchedulerCache) onPropagationPolicyDelete(obj interface{}) {
 	}
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
-	delete(sc.Placements, schedulingapi.PlacementID(policy.UID))
+	delete(sc.Placements[schedulingapi.NamespacePlacement], schedulingapi.PlacementID(policy.UID))
 }
 
 func (sc *SchedulerCache) addCluster(obj interface{}) {
