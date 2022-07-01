@@ -137,10 +137,10 @@ type JobEnqueuedFn func(interface{})
 type PredicateFn func(*TaskInfo, *NodeInfo) error
 
 // ClusterPredicateFn is the func declaration used to predicate node for task.
-type ClusterPredicateFn func(*ClusterTaskInfo, *Cluster, *PlacementInfo) error
+type ClusterPredicateFn func(*ClusterTaskInfo, *ClusterDetailInfo, *PlacementInfo) error
 
 // BatchClusterOrderFn is the func declaration used to predicate node for task.
-type BatchClusterOrderFn func(*ClusterTaskInfo, []*Cluster, *PlacementInfo) (map[string]float64, error)
+type BatchClusterOrderFn func(*ClusterTaskInfo, []*ClusterDetailInfo, *PlacementInfo) (map[string]float64, error)
 
 // BestNodeFn is the func declaration used to return the nodeScores to plugins.
 type BestNodeFn func(*TaskInfo, map[float64][]*NodeInfo) *NodeInfo

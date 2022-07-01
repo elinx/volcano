@@ -24,7 +24,9 @@ import (
 	v1 "k8s.io/api/core/v1"
 	schedulingv1 "k8s.io/api/scheduling/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/kubelet/cm/cpumanager/topology"
@@ -942,7 +944,8 @@ func (sc *SchedulerCache) onResourceBindingAdd(obj interface{}) {
 	}
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
-	sc.ClusterTasks[schedulingapi.ClusterTaskID(rb.UID)] = schedulingapi.NewClusterTaskInfo(rb)
+	sc.ClusterTasks[schedulingapi.ClusterTaskID(rb.UID)] =
+		schedulingapi.NewClusterTaskInfo(schedulingapi.NamespaceTask, &schedulingapi.ResourceBinding{rb})
 }
 
 func (sc *SchedulerCache) onResourceBindingUpdate(old, new interface{}) {
@@ -960,12 +963,57 @@ func (sc *SchedulerCache) onResourceBindingUpdate(old, new interface{}) {
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
 	delete(sc.ClusterTasks, schedulingapi.ClusterTaskID(oldrb.UID))
-	sc.ClusterTasks[schedulingapi.ClusterTaskID(newrb.UID)] = schedulingapi.NewClusterTaskInfo(newrb)
+	sc.ClusterTasks[schedulingapi.ClusterTaskID(newrb.UID)] =
+		schedulingapi.NewClusterTaskInfo(schedulingapi.NamespaceTask, &schedulingapi.ResourceBinding{newrb})
 }
 
 func (sc *SchedulerCache) onResourceBindingDelete(obj interface{}) {
 	klog.V(1).Infof("enter...")
 	rb, ok := obj.(*kworkv1alpha1.ResourceBinding)
+	if !ok {
+		klog.Errorf("Cannot convert to ResourceBinding: %v", rb)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	delete(sc.ClusterTasks, schedulingapi.ClusterTaskID(rb.UID))
+}
+
+func (sc *SchedulerCache) onClusterResourceBindingAdd(obj interface{}) {
+	klog.V(1).Infof("enter...")
+	rb, ok := obj.(*kworkv1alpha1.ClusterResourceBinding)
+	if !ok {
+		klog.Errorf("Cannot convert to ResourceBinding: %v", rb)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	sc.ClusterTasks[schedulingapi.ClusterTaskID(rb.UID)] =
+		schedulingapi.NewClusterTaskInfo(schedulingapi.ClusterTask, &schedulingapi.ClusterResourceBinding{ClusterResourceBinding: rb})
+}
+
+func (sc *SchedulerCache) onClusterResourceBindingUpdate(old, new interface{}) {
+	klog.V(1).Infof("enter...")
+	oldrb, ok := old.(*kworkv1alpha1.ClusterResourceBinding)
+	if !ok {
+		klog.Errorf("Cannot convert to ResourceBinding: %v", oldrb)
+		return
+	}
+	newrb, ok := old.(*kworkv1alpha1.ClusterResourceBinding)
+	if !ok {
+		klog.Errorf("Cannot convert to ResourceBinding: %v", newrb)
+		return
+	}
+	sc.Mutex.Lock()
+	defer sc.Mutex.Unlock()
+	delete(sc.ClusterTasks, schedulingapi.ClusterTaskID(oldrb.UID))
+	sc.ClusterTasks[schedulingapi.ClusterTaskID(newrb.UID)] =
+		schedulingapi.NewClusterTaskInfo(schedulingapi.NamespaceTask, &schedulingapi.ClusterResourceBinding{ClusterResourceBinding: newrb})
+}
+
+func (sc *SchedulerCache) onClusterResourceBindingDelete(obj interface{}) {
+	klog.V(1).Infof("enter...")
+	rb, ok := obj.(*kworkv1alpha1.ClusterResourceBinding)
 	if !ok {
 		klog.Errorf("Cannot convert to ResourceBinding: %v", rb)
 		return
@@ -985,7 +1033,7 @@ func (sc *SchedulerCache) onClusterPropagationPolicyAdd(obj interface{}) {
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
 	sc.Placements[schedulingapi.ClusterPlacement][schedulingapi.PlacementID(policy.UID)] =
-		schedulingapi.NewPlacementInfo(&policy.Spec.Placement, schedulingapi.ClusterPlacement, policy.Spec.ResourceSelectors)
+		schedulingapi.NewPlacementInfo(schedulingapi.ClusterPlacement, &schedulingapi.ClusterPropagationPolicy{ClusterPropagationPolicy: policy})
 }
 
 func (sc *SchedulerCache) onClusterPropagationPolicyUpdate(old, new interface{}) {
@@ -1004,7 +1052,7 @@ func (sc *SchedulerCache) onClusterPropagationPolicyUpdate(old, new interface{})
 	defer sc.Mutex.Unlock()
 	delete(sc.Placements[schedulingapi.ClusterPlacement], schedulingapi.PlacementID(oldPolicy.UID))
 	sc.Placements[schedulingapi.ClusterPlacement][schedulingapi.PlacementID(newPolicy.UID)] =
-		schedulingapi.NewPlacementInfo(&newPolicy.Spec.Placement, schedulingapi.ClusterPlacement, newPolicy.Spec.ResourceSelectors)
+		schedulingapi.NewPlacementInfo(schedulingapi.ClusterPlacement, &schedulingapi.ClusterPropagationPolicy{ClusterPropagationPolicy: newPolicy})
 }
 
 func (sc *SchedulerCache) onClusterPropagationPolicyDelete(obj interface{}) {
@@ -1029,7 +1077,7 @@ func (sc *SchedulerCache) onPropagationPolicyAdd(obj interface{}) {
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
 	sc.Placements[schedulingapi.NamespacePlacement][schedulingapi.PlacementID(policy.UID)] =
-		schedulingapi.NewPlacementInfo(&policy.Spec.Placement, schedulingapi.NamespacePlacement, policy.Spec.ResourceSelectors)
+		schedulingapi.NewPlacementInfo(schedulingapi.NamespacePlacement, &schedulingapi.PropagationPolicy{PropagationPolicy: policy})
 }
 
 func (sc *SchedulerCache) onPropagationPolicyUpdate(old, new interface{}) {
@@ -1048,7 +1096,15 @@ func (sc *SchedulerCache) onPropagationPolicyUpdate(old, new interface{}) {
 	defer sc.Mutex.Unlock()
 	delete(sc.Placements[schedulingapi.NamespacePlacement], schedulingapi.PlacementID(oldPolicy.UID))
 	sc.Placements[schedulingapi.NamespacePlacement][schedulingapi.PlacementID(newPolicy.UID)] =
-		schedulingapi.NewPlacementInfo(&newPolicy.Spec.Placement, schedulingapi.NamespacePlacement, newPolicy.Spec.ResourceSelectors)
+		schedulingapi.NewPlacementInfo(schedulingapi.NamespacePlacement, &schedulingapi.PropagationPolicy{PropagationPolicy: newPolicy})
+
+	selector := labels.SelectorFromSet(labels.Set{
+		kpolicyv1alpha1.PropagationPolicyNamespaceLabel: oldPolicy.Namespace,
+		kpolicyv1alpha1.PropagationPolicyNameLabel:      oldPolicy.Name,
+	})
+	for _, task := range sc.ClusterTasks {
+		task.OnPlacementChanged(selector)
+	}
 }
 
 func (sc *SchedulerCache) onPropagationPolicyDelete(obj interface{}) {
@@ -1092,6 +1148,11 @@ func (sc *SchedulerCache) updateCluster(old, new interface{}) {
 	defer sc.Mutex.Unlock()
 	delete(sc.Clusters, schedulingapi.ClusterID(oldCluster.UID))
 	sc.Clusters[schedulingapi.ClusterID(newCluster.UID)] = schedulingapi.NewCluster(newCluster)
+	if meta.IsStatusConditionPresentAndEqual(newCluster.Status.Conditions, kclusterv1alpha1.ClusterConditionReady, metav1.ConditionFalse) {
+		for _, task := range sc.ClusterTasks {
+			task.OnDeleteCluster(newCluster.Name)
+		}
+	}
 }
 
 func (sc *SchedulerCache) deleteCluster(obj interface{}) {
@@ -1103,4 +1164,7 @@ func (sc *SchedulerCache) deleteCluster(obj interface{}) {
 	sc.Mutex.Lock()
 	defer sc.Mutex.Unlock()
 	delete(sc.Clusters, schedulingapi.ClusterID(cluster.UID))
+	for _, task := range sc.ClusterTasks {
+		task.OnDeleteCluster(cluster.Name)
+	}
 }

@@ -140,9 +140,10 @@ type SchedulerCache struct {
 	defaultPriorityClass *schedulingv1.PriorityClass
 	defaultPriority      int32
 
-	Clusters     map[schedulingapi.ClusterID]*schedulingapi.Cluster
-	ClusterTasks map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo
-	Placements   map[schedulingapi.PlacementType]map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo
+	ClustersTopology *schedulingapi.ClustersTopology
+	Clusters         map[schedulingapi.ClusterID]*schedulingapi.ClusterDetailInfo
+	ClusterTasks     map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo
+	Placements       map[schedulingapi.PlacementType]map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo
 
 	NamespaceCollection map[string]*schedulingapi.NamespaceCollection
 
@@ -427,7 +428,7 @@ func newSchedulerCache(config *rest.Config, schedulerName string, defaultQueue s
 		Nodes:               make(map[string]*schedulingapi.NodeInfo),
 		Queues:              make(map[schedulingapi.QueueID]*schedulingapi.QueueInfo),
 		PriorityClasses:     make(map[string]*schedulingv1.PriorityClass),
-		Clusters:            make(map[schedulingapi.ClusterID]*schedulingapi.Cluster),
+		Clusters:            make(map[schedulingapi.ClusterID]*schedulingapi.ClusterDetailInfo),
 		ClusterTasks:        make(map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo),
 		Placements:          make(map[schedulingapi.PlacementType]map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
 		errTasks:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
@@ -675,9 +676,9 @@ func (sc *SchedulerCache) addClusterEventHandlers() {
 	sc.clusterBindingInformer.Informer().AddEventHandler(cache.FilteringResourceEventHandler{
 		FilterFunc: sc.resourceBindingEventFilter,
 		Handler: cache.ResourceEventHandlerFuncs{
-			AddFunc:    sc.onResourceBindingAdd,
-			UpdateFunc: sc.onResourceBindingUpdate,
-			DeleteFunc: sc.onResourceBindingDelete,
+			AddFunc:    sc.onClusterResourceBindingAdd,
+			UpdateFunc: sc.onClusterResourceBindingUpdate,
+			DeleteFunc: sc.onClusterResourceBindingDelete,
 		},
 	})
 
@@ -1101,7 +1102,7 @@ func (sc *SchedulerCache) Snapshot() *schedulingapi.ClusterInfo {
 		RevocableNodes: make(map[string]*schedulingapi.NodeInfo),
 		NodeList:       make([]string, len(sc.NodeList)),
 
-		Clusters:     make(map[schedulingapi.ClusterID]*schedulingapi.Cluster),
+		Clusters:     make(map[schedulingapi.ClusterID]*schedulingapi.ClusterDetailInfo),
 		ClusterTasks: make(map[schedulingapi.ClusterTaskID]*schedulingapi.ClusterTaskInfo),
 		Placements:   make(map[schedulingapi.PlacementType]map[schedulingapi.PlacementID]*schedulingapi.PlacementInfo),
 	}

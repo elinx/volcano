@@ -44,6 +44,18 @@ func (alloc *Action) Initialize() {
 	defer klog.V(3).Infof("Leaving...")
 }
 
+func TaskReady(task *api.ClusterTaskInfo, placement *api.PlacementInfo, ssn *framework.Session) bool {
+	targetClusters := task.ResourceBinding.Spec().Clusters
+	// not scheduled yet
+	if len(targetClusters) == 0 {
+		return false
+	}
+	if task.State != api.ClusterTaskScheduled {
+		return false
+	}
+	return true
+}
+
 func (alloc *Action) Execute(ssn *framework.Session) {
 	klog.V(3).Infof("Enter ClusterAllocate...")
 	defer klog.V(3).Infof("Leaving ClusterAllocate...")
@@ -54,10 +66,10 @@ func (alloc *Action) Execute(ssn *framework.Session) {
 
 	for _, task := range ssn.ClusterTasks {
 		// TODO: task maybe update
-		if len(task.ResourceBinding.Spec.Clusters) != 0 {
+		if len(task.ResourceBinding.Spec().Clusters) != 0 {
 			continue
 		}
-		candidates := []*api.Cluster{}
+		candidates := []*api.ClusterDetailInfo{}
 		placement := alloc.getPlacement(ssn)
 		for _, cluster := range ssn.Clusters {
 			if err := ssn.ClusterPredicateFn(task, cluster, placement); err == nil {
@@ -74,7 +86,7 @@ func (alloc *Action) Execute(ssn *framework.Session) {
 
 		// select clusters by score, only 0 and 100 for now
 		// TODO: sort by socre
-		seeds := []*api.Cluster{}
+		seeds := []*api.ClusterDetailInfo{}
 		for _, cluster := range candidates {
 			if score, ok := scores[cluster.Name]; !ok {
 				continue
@@ -91,32 +103,33 @@ func (alloc *Action) Execute(ssn *framework.Session) {
 		for _, cluster := range seeds {
 			replicas = append(replicas, kworkv1alpha1.TargetCluster{
 				Name:     cluster.Name,
-				Replicas: task.ResourceBinding.Spec.Resource.Replicas,
+				Replicas: task.ResourceBinding.Spec().Resource.Replicas,
 			})
 		}
 		klog.V(3).Infof("target replicas: %v", replicas)
 
 		// TODO: patch task with scheduler's decision
 		newRb := task.ResourceBinding.DeepCopy()
-		newRb.Spec.Clusters = replicas
+		newRb.Spec().Clusters = replicas
 
 		oldData, err := json.Marshal(task.ResourceBinding)
 		if err != nil {
-			klog.Errorf("failed to marshal the existing resource binding(%s/%s): %v", task.ResourceBinding.Namespace, task.Name, err)
+			klog.Errorf("failed to marshal the existing resource binding(%s/%s): %v", task.ResourceBinding.ObjectMeta().Namespace, task.Name, err)
 		}
 		newData, err := json.Marshal(newRb)
 		if err != nil {
-			klog.Errorf("failed to marshal the new resource binding(%s/%s): %v", newRb.Namespace, newRb.Name, err)
+			klog.Errorf("failed to marshal the new resource binding(%s/%s): %v",
+				newRb.ObjectMeta().Namespace, newRb.ObjectMeta().Name, err)
 		}
 		patchBytes, err := jsonpatch.CreateMergePatch(oldData, newData)
 		if err != nil {
 			klog.Errorf("failed to create a merge patch: %v", err)
 		}
-		klog.V(3).Infof("patch: %v", patchBytes)
+		klog.V(3).Infof("patch: %v", string(patchBytes))
 
 		_, err = ssn.KarmadaClient().WorkV1alpha2().
-			ResourceBindings(task.ResourceBinding.Namespace).
-			Patch(context.TODO(), newRb.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+			ResourceBindings(task.ResourceBinding.ObjectMeta().Namespace).
+			Patch(context.TODO(), newRb.ObjectMeta().Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
 		if err != nil {
 			klog.Errorf("patch failed: %v", err)
 		}

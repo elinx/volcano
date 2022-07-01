@@ -26,12 +26,12 @@ func (cl *clusterAffinity) OnSessionOpen(ssn *framework.Session) {
 	klog.V(3).Infof("Enter ClusterAffinity Open...")
 	defer klog.V(3).Infof("Leaving ClusterAffinity Close...")
 
-	ssn.AddClusterPredicateFn(cl.Name(), func(*api.ClusterTaskInfo, *api.Cluster, *api.PlacementInfo) error {
+	ssn.AddClusterPredicateFn(cl.Name(), func(*api.ClusterTaskInfo, *api.ClusterDetailInfo, *api.PlacementInfo) error {
 		klog.V(3).Infof("enter cluster affinity predicates")
 		return nil
 	})
 
-	ssn.AddBatchClusterOrderFn(cl.Name(), func(task *api.ClusterTaskInfo, clusters []*api.Cluster, placement *api.PlacementInfo) (map[string]float64, error) {
+	ssn.AddBatchClusterOrderFn(cl.Name(), func(task *api.ClusterTaskInfo, clusters []*api.ClusterDetailInfo, placement *api.PlacementInfo) (map[string]float64, error) {
 		klog.V(3).Infof("enter cluster affinity batch order")
 		res := make(map[string]float64, len(clusters))
 		for _, cluster := range clusters {

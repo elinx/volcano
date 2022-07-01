@@ -649,7 +649,7 @@ func (ssn *Session) PredicateFn(task *api.TaskInfo, node *api.NodeInfo) error {
 }
 
 // PredicateFn invoke predicate function of the plugins
-func (ssn *Session) ClusterPredicateFn(task *api.ClusterTaskInfo, cluster *api.Cluster, placement *api.PlacementInfo) error {
+func (ssn *Session) ClusterPredicateFn(task *api.ClusterTaskInfo, cluster *api.ClusterDetailInfo, placement *api.PlacementInfo) error {
 	for _, tier := range ssn.Tiers {
 		for _, plugin := range tier.Plugins {
 			if !isEnabled(plugin.EnabledPredicate) {
@@ -669,7 +669,7 @@ func (ssn *Session) ClusterPredicateFn(task *api.ClusterTaskInfo, cluster *api.C
 }
 
 // BatchNodeOrderFn invoke node order function of the plugins
-func (ssn *Session) BatchClusterOrderFn(task *api.ClusterTaskInfo, clusters []*api.Cluster,
+func (ssn *Session) BatchClusterOrderFn(task *api.ClusterTaskInfo, clusters []*api.ClusterDetailInfo,
 	placement *api.PlacementInfo) (map[string]float64, error) {
 	priorityScore := make(map[string]float64, len(clusters))
 	for _, tier := range ssn.Tiers {

@@ -29,7 +29,7 @@ type ClusterInfo struct {
 	RevocableNodes map[string]*NodeInfo
 	NodeList       []string
 
-	Clusters     map[ClusterID]*Cluster
+	Clusters     map[ClusterID]*ClusterDetailInfo
 	ClusterTasks map[ClusterTaskID]*ClusterTaskInfo
 	Placements   map[PlacementType]map[PlacementID]*PlacementInfo
 }

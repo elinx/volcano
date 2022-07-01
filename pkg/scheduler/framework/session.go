@@ -60,7 +60,7 @@ type Session struct {
 	Queues         map[api.QueueID]*api.QueueInfo
 	NamespaceInfo  map[api.NamespaceName]*api.NamespaceInfo
 
-	Clusters     map[api.ClusterID]*api.Cluster
+	Clusters     map[api.ClusterID]*api.ClusterDetailInfo
 	ClusterTasks map[api.ClusterTaskID]*api.ClusterTaskInfo
 	Placements   map[api.PlacementType]map[api.PlacementID]*api.PlacementInfo
 
